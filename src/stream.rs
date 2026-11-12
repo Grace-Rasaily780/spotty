@@ -7,7 +7,6 @@ use crate::ytdlp::{
 };
 use eframe::egui::{self};
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::mpsc;
 
 pub(crate) const CHUNK: u64 = 1 << 20;

@@ -6,14 +6,20 @@ No account, no service to run.
 
 ## Install
 
+Download the file for your system from the **Releases** page.
+
+**Windows:** unzip `spotty-*-windows-x86_64.zip` and run `spotty.exe`. The executable is not code-signed,
+so Windows SmartScreen may warn the first time: choose "More info" then "Run anyway".
+
+**Linux:**
 ```sh
 tar xzf spotty-*-linux-*.tar.gz && cd spotty-*/
 ./install.sh          # installs to ~/.local/bin and adds an app-menu entry
 ```
 
-First launch downloads two helpers (yt-dlp and a JavaScript runtime, about 80 MB, checksum-verified)
-into `~/.cache/spotty`. A banner shows progress; after that it works offline-first and keeps yt-dlp
-updated about once a day. Needs Linux (x86_64 or aarch64) and an audio output device.
+First launch downloads two helpers (yt-dlp and a JavaScript runtime, about 80 MB to download and 140 MB on disk, checksum-verified)
+into the cache folder. A banner shows progress; afterwards it keeps yt-dlp updated about once a day.
+Needs Windows 10+ or Linux (x86_64; aarch64 builds from source) and an audio output device.
 
 ## How playback works
 
@@ -28,8 +34,10 @@ Audio is streamed in chunks and never saved. Press the download button on a trac
 
 ## Your data
 
-- Library (liked songs, playlists, history): `~/.local/share/spotty/spotty.db` (SQLite). Back this file up.
-- Downloaded helpers and caches: `~/.cache/spotty` (safe to delete; they are fetched again).
+- Library (liked songs, playlists, history): `spotty.db` (SQLite) in your user data folder
+  (`~/.local/share/spotty` on Linux, `%APPDATA%\spotty` on Windows). Back this file up.
+- Downloaded helpers and caches: `~/.cache/spotty` on Linux, `%LOCALAPPDATA%\spotty` on Windows
+  (safe to delete; they are fetched again).
 
 ## Settings (environment variables)
 
@@ -37,7 +45,7 @@ Audio is streamed in chunks and never saved. Press the download button on a trac
 |---|---|
 | `SPOTTY_COOKIES=firefox` | Give yt-dlp your browser's YouTube session (helps if YouTube keeps asking to sign in). Use a throwaway account. |
 | `SPOTTY_REDUCE_MOTION=1` | No fades, shimmer sweeps or spinners animation. |
-| `SPOTTY_NO_POT=1` | Do not start the optional token provider. |
+| `SPOTTY_NO_POT=1` | Do not start the optional token provider (Linux only; needs Node and git). |
 
 ## Troubleshooting
 
@@ -51,8 +59,19 @@ Audio is streamed in chunks and never saved. Press the download button on a trac
 ```sh
 cargo build --release      # binary: target/release/spotty
 cargo test --release
-scripts/package.sh         # release tarball in dist/
+scripts/package.sh         # Linux release tarball in dist/
 ```
+
+## Releasing
+
+Set `version` in `Cargo.toml`, then push a matching tag. GitHub Actions builds, tests and publishes the
+Linux and Windows downloads on the Releases page:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Fonts: Noto Sans (Apache-2.0), see `assets/fonts`.
 
 ## Legal
 

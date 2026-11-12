@@ -1,3 +1,4 @@
+use std::process::Command;
 pub(crate) fn mmss(s: u64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
@@ -62,6 +63,16 @@ pub(crate) fn short_num(n: u64) -> String {
     } else {
         n.to_string()
     }
+}
+
+/// Spawn a helper program without flashing a console window on Windows.
+pub(crate) fn quiet(c: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    c
 }
 
 #[cfg(test)]

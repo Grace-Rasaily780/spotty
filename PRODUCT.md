@@ -4,10 +4,10 @@
 
 ## Platform
 
-adaptive
+adaptive (Linux and Windows desktop)
 
 ## Stack
-Rust, eframe/egui 0.37 (native desktop, Linux first), rodio for audio, yt-dlp (auto-installed via the `yt-dlp` crate) for resolving audio streams. Single file `src/main.rs`.
+Rust, eframe/egui 0.37 (native desktop, Linux and Windows), rodio for audio, SQLite (rusqlite) for the library, ureq for HTTP. yt-dlp and a JavaScript runtime are downloaded and checksum-verified on first run (`src/setup.rs`). Modules: catalog, stream, ytdlp, setup, db, ui/*.
 
 ## Users
 One person listening on their own laptop who wants a Spotify-like player without a Spotify account or service: search artists and songs, build playlists, listen. Desktop, mouse and keyboard; window may be narrow, so layouts collapse.

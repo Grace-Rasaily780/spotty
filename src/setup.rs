@@ -6,6 +6,7 @@
 //! into place, so an interrupted download never leaves a half-written executable behind.
 
 use crate::db::cache_dir;
+use crate::util::quiet;
 use eframe::egui;
 use sha2::{Digest, Sha256};
 use std::{
@@ -168,11 +169,16 @@ fn run(ctx: &Option<egui::Context>) {
 
 // ───────────────────────────── components ─────────────────────────────
 
-/// (yt-dlp release asset, deno release archive) for this machine.
-fn platform() -> Result<(&'static str, &'static str), String> {
+/// (yt-dlp release asset, deno release archive, executable suffix) for this machine.
+fn platform() -> Result<(&'static str, &'static str, &'static str), String> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => Ok(("yt-dlp_linux", "deno-x86_64-unknown-linux-gnu.zip")),
-        ("linux", "aarch64") => Ok(("yt-dlp_linux_aarch64", "deno-aarch64-unknown-linux-gnu.zip")),
+        ("linux", "x86_64") => Ok(("yt-dlp_linux", "deno-x86_64-unknown-linux-gnu.zip", "")),
+        ("linux", "aarch64") => Ok((
+            "yt-dlp_linux_aarch64",
+            "deno-aarch64-unknown-linux-gnu.zip",
+            "",
+        )),
+        ("windows", "x86_64") => Ok(("yt-dlp.exe", "deno-x86_64-pc-windows-msvc.zip", ".exe")),
         (os, arch) => Err(format!("unsupported platform {os}/{arch}")),
     }
 }
@@ -184,8 +190,8 @@ fn bin_dir() -> PathBuf {
 }
 
 fn ensure_yt_dlp(report: &impl Fn(String)) -> Result<PathBuf, String> {
-    let (asset, _) = platform()?;
-    let bin = bin_dir().join("yt-dlp");
+    let (asset, _, exe) = platform()?;
+    let bin = bin_dir().join(format!("yt-dlp{exe}"));
     if bin.exists() {
         return Ok(bin);
     }
@@ -214,8 +220,7 @@ fn update_yt_dlp_if_stale(bin: &Path) {
         .and_then(|t| SystemTime::now().duration_since(t).ok())
         .is_some_and(|age| age < Duration::from_secs(24 * 3600));
     if !fresh
-        && Command::new(bin)
-            .arg("-U")
+        && quiet(Command::new(bin).arg("-U"))
             .output()
             .is_ok_and(|o| o.status.success())
     {
@@ -226,16 +231,15 @@ fn update_yt_dlp_if_stale(bin: &Path) {
 /// yt-dlp needs a JavaScript runtime for YouTube's challenges. Use one already installed, else fetch deno.
 fn ensure_js_runtime(report: &impl Fn(String)) -> Result<String, String> {
     for rt in ["deno", "node", "bun"] {
-        if Command::new(rt)
-            .arg("--version")
+        if quiet(Command::new(rt).arg("--version"))
             .output()
             .is_ok_and(|o| o.status.success())
         {
             return Ok(rt.to_string());
         }
     }
-    let (_, archive) = platform()?;
-    let deno = bin_dir().join("deno");
+    let (_, archive, exe) = platform()?;
+    let deno = bin_dir().join(format!("deno{exe}"));
     if !deno.exists() {
         let base = "https://github.com/denoland/deno/releases/latest/download";
         let want = fetch_text(&format!("{base}/{archive}.sha256sum"))?
@@ -251,7 +255,7 @@ fn ensure_js_runtime(report: &impl Fn(String)) -> Result<String, String> {
             "Downloading JavaScript runtime",
             report,
         )?;
-        let result = extract_one(&zip_path, "deno", &deno);
+        let result = extract_one(&zip_path, &format!("deno{exe}"), &deno);
         let _ = std::fs::remove_file(&zip_path);
         result?;
         make_executable(&deno)?;
@@ -316,7 +320,7 @@ fn download(
         }
     }
     drop(file);
-    let got = format!("{:x}", hasher.finalize());
+    let got = hex(&hasher.finalize());
     if got != want {
         let _ = std::fs::remove_file(&part);
         return Err(format!(
@@ -339,9 +343,19 @@ fn extract_one(zip_path: &Path, entry: &str, out: &Path) -> Result<(), String> {
     std::fs::rename(&part, out).map_err(|e| e.to_string())
 }
 
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(unix)]
 fn make_executable(p: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())
+}
+
+#[cfg(not(unix))]
+fn make_executable(_: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 fn touch(p: &Path) {
@@ -351,7 +365,7 @@ fn touch(p: &Path) {
 /// Hex SHA-256 of a byte slice (test helper, also documents the format `download` compares against).
 #[cfg(test)]
 fn sha256_hex(b: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(b))
+    hex(&Sha256::digest(b))
 }
 
 #[cfg(test)]

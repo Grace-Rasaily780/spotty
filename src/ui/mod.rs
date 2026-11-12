@@ -14,7 +14,6 @@ use crate::ytdlp::plain_err;
 use eframe::egui::{self, Color32, Pos2, Stroke, vec2};
 use rodio::{DeviceSinkBuilder, Player};
 use std::collections::HashSet;
-use std::process::Command;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -88,12 +87,7 @@ impl App {
         crate::setup::start(Some(cc.egui_ctx.clone()));
         let player = Player::connect_new(sink.mixer());
         let (tx, rx) = mpsc::channel();
-        let hour: u32 = Command::new("date")
-            .arg("+%H")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
-            .unwrap_or(12);
+        let hour = chrono::Timelike::hour(&chrono::Local::now());
         let greeting = match hour {
             5..=11 => "Good morning",
             12..=17 => "Good afternoon",

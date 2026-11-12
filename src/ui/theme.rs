@@ -34,60 +34,31 @@ pub(crate) fn tint(seed: &str, v: f32) -> Color32 {
     egui::ecolor::Hsva::new(h as f32 / 360.0, 0.55, v, 1.0).into()
 }
 
+const NOTO_REGULAR: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Regular.ttf");
+const NOTO_BOLD: &[u8] = include_bytes!("../../assets/fonts/NotoSans-Bold.ttf");
+
+/// Noto Sans is embedded (Apache-2.0, see assets/fonts) so the app looks the same on every OS.
 pub(crate) fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let mut add = |name: &str, path: &str, fam: FontFamily, first: bool| {
-        if let Ok(b) = std::fs::read(path) {
-            fonts.font_data.insert(
-                name.into(),
-                std::sync::Arc::new(egui::FontData::from_owned(b)),
-            );
-            let v = fonts.families.entry(fam).or_default();
-            if first {
-                v.insert(0, name.into())
-            } else {
-                v.push(name.into())
-            }
-            true
-        } else {
-            false
-        }
-    };
-    let has_bold = add(
-        "noto-bold",
-        "/usr/share/fonts/noto/NotoSans-Bold.ttf",
-        FontFamily::Name("bold".into()),
-        true,
-    );
-    add(
-        "noto-reg",
-        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-        FontFamily::Proportional,
-        true,
-    );
-    if !has_bold {
-        let v = fonts
-            .families
-            .get(&FontFamily::Proportional)
-            .cloned()
-            .unwrap_or_default();
-        fonts.families.insert(FontFamily::Name("bold".into()), v);
-    } else {
-        // glyph fallbacks for the bold family
-        let fb = fonts
-            .families
-            .get(&FontFamily::Proportional)
-            .cloned()
-            .unwrap_or_default();
-        let v = fonts
-            .families
-            .get_mut(&FontFamily::Name("bold".into()))
-            .unwrap();
-        for f in fb {
-            if !v.contains(&f) {
-                v.push(f);
-            }
-        }
+    for (name, bytes) in [("noto-regular", NOTO_REGULAR), ("noto-bold", NOTO_BOLD)] {
+        fonts.font_data.insert(
+            name.into(),
+            std::sync::Arc::new(egui::FontData::from_static(bytes)),
+        );
     }
+    let defaults = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "noto-regular".into());
+    // bold family = the bold face, then the built-in fonts as glyph fallbacks
+    let mut bold = vec!["noto-bold".to_string()];
+    bold.extend(defaults);
+    fonts.families.insert(FontFamily::Name("bold".into()), bold);
     ctx.set_fonts(fonts);
 }
