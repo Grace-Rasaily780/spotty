@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Spotty
+Comment=Stream music from official artist sources
+Exec=spotty
+Icon=spotty
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=spotty
+Terminal=false
