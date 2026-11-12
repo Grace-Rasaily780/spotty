@@ -3,6 +3,7 @@
 mod catalog;
 mod db;
 mod model;
+mod rank;
 mod setup;
 mod stream;
 mod ui;
@@ -10,7 +11,7 @@ mod util;
 mod ytdlp;
 
 use crate::catalog::{find_artists, find_tracks};
-use crate::stream::{match_official, play_catalogue};
+use crate::stream::resolve;
 use crate::ui::App;
 use eframe::egui::{self};
 
@@ -18,36 +19,29 @@ fn main() -> eframe::Result {
     // `spotty --probe "query"`: print how the first result would be sourced (no window, no audio device)
     if let Some(q) = std::env::args().skip_while(|a| a != "--probe").nth(1) {
         setup::run_blocking();
-        let tr = find_tracks(&q).unwrap_or_default();
-        let ar = find_artists(&q, &tr).unwrap_or_default();
+        let official_only = !std::env::args().any(|a| a == "--all");
+        let tr = find_tracks(&q, official_only).unwrap_or_default();
+        let ar = find_artists(&q).unwrap_or_default();
         println!(
             "artists: {:?}",
             ar.iter()
                 .map(|a| (&a.name, a.followers))
                 .collect::<Vec<_>>()
         );
-        println!("tracks: {}", tr.len());
-        for t in tr.iter().take(3) {
-            let yt = match_official("ytsearch", t);
-            let sc = match_official("scsearch", t);
+        println!("tracks (official_only={official_only}): {}", tr.len());
+        for t in tr.iter().take(10) {
             println!(
-                "{} - {} ({}s) src={} cover={}",
+                "  {} - {} ({}s){}",
                 t.artist,
                 t.title,
                 t.secs,
-                t.src,
-                !t.thumb.is_empty()
+                if t.unofficial { "  [unofficial]" } else { "" }
             );
-            println!("   youtube official: {:?}", yt);
-            println!("   soundcloud official: {:?}", sc);
-            println!("   preview: {}", !t.preview.is_empty());
         }
         if let Some(t) = tr.first() {
-            match play_catalogue(t) {
-                Ok((_, pv, note)) => {
-                    println!("play_catalogue: ok, preview_only={pv}, note={note:?}")
-                }
-                Err(e) => println!("play_catalogue: FAILED {e}"),
+            match resolve(t) {
+                Ok(_) => println!("first result resolves to a stream: ok"),
+                Err(e) => println!("first result resolve FAILED: {e}"),
             }
         }
         return Ok(());

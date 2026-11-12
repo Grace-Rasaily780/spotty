@@ -4,7 +4,7 @@ mod screens;
 mod theme;
 mod widgets;
 
-use crate::catalog::{artist_by_id, artist_tracks, find_artists, find_tracks};
+use crate::catalog::{artist_tracks, find_artists, find_tracks};
 use crate::db;
 use crate::model::{Artist, Msg, Playlist, Track, View};
 use crate::stream::{download, stream};
@@ -23,6 +23,7 @@ pub(crate) struct App {
     nav_t: f64,
     now: f64,
     reduce: bool,
+    pub(crate) official_only: bool,
     greeting: String,
 
     query: String,
@@ -100,6 +101,7 @@ impl App {
             nav_t: -10.0,
             now: 0.0,
             reduce: std::env::var("SPOTTY_REDUCE_MOTION").is_ok_and(|v| v != "0"),
+            official_only: db::setting("official_only").as_deref() != Some("0"),
             greeting,
             query: String::new(),
             qgen: 0,
@@ -166,13 +168,15 @@ impl App {
         self.tracks.clear();
         self.artists.clear();
         self.nav(View::Search);
+        let official_only = self.official_only;
+        let (tx, c, q2) = (self.tx.clone(), ctx.clone(), q.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::Tracks(g, find_tracks(&q2, official_only)));
+            c.request_repaint();
+        });
         let (tx, c) = (self.tx.clone(), ctx.clone());
         std::thread::spawn(move || {
-            let tr = find_tracks(&q);
-            let hint = tr.clone().unwrap_or_default();
-            let _ = tx.send(Msg::Tracks(g, tr));
-            c.request_repaint();
-            let _ = tx.send(Msg::Artists(g, find_artists(&q, &hint)));
+            let _ = tx.send(Msg::Artists(g, find_artists(&q)));
             c.request_repaint();
         });
     }
@@ -193,13 +197,20 @@ impl App {
         let (tx, c) = (self.tx.clone(), ctx.clone());
         std::thread::spawn(move || {
             let r = (|| {
-                let a = match (known, id) {
-                    (Some(a), _) => a,
-                    (None, Some(id)) if !id.is_empty() => artist_by_id(&id)?,
-                    _ => find_artists(&name, &[])?
-                        .into_iter()
-                        .next()
-                        .ok_or("No official artist page found")?,
+                let a = match known {
+                    Some(a) => a,
+                    None => {
+                        // prefer the artist that owns the channel the song came from
+                        let mut found = find_artists(&name)?;
+                        let pos = id
+                            .as_deref()
+                            .and_then(|id| found.iter().position(|a| a.ids.iter().any(|i| i == id)))
+                            .unwrap_or(0);
+                        if pos >= found.len() {
+                            return Err("No official artist page found".to_string());
+                        }
+                        found.swap_remove(pos)
+                    }
                 };
                 let t = artist_tracks(&a)?;
                 Ok((a, t))

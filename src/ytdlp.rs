@@ -77,6 +77,7 @@ pub(crate) struct Raw {
     pub(crate) chan: String,
     pub(crate) chan_id: String,
     pub(crate) verified: bool,
+    pub(crate) views: u64,
 }
 
 pub(crate) fn raw_search(prefix: &str, q: &str, n: usize) -> Result<Vec<Raw>, String> {
@@ -119,10 +120,12 @@ pub(crate) fn raw_search(prefix: &str, q: &str, n: usize) -> Result<Vec<Raw>, St
                     },
                     preview: String::new(),
                     artist_id: String::new(),
+                    unofficial: false,
                 },
                 chan,
                 chan_id: e["channel_id"].as_str().unwrap_or("").into(),
                 verified: e["channel_is_verified"].as_bool().unwrap_or(false),
+                views: e["view_count"].as_u64().unwrap_or(0),
             })
         })
         .collect())

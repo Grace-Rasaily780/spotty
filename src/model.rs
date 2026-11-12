@@ -16,7 +16,9 @@ pub(crate) struct Track {
     #[serde(default)]
     pub(crate) preview: String, // 30 s preview url (catalogue tracks)
     #[serde(default)]
-    pub(crate) artist_id: String, // catalogue artist id
+    pub(crate) artist_id: String, // YouTube channel id (or Deezer artist id for old saved songs)
+    #[serde(default)]
+    pub(crate) unofficial: bool, // from a channel that is not the artist's own
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]

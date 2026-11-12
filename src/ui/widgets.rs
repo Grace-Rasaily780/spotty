@@ -466,6 +466,8 @@ pub(crate) fn row(
     // artist link
     let sub = if dead {
         "Unavailable, no official source".to_string()
+    } else if t.unofficial {
+        ell(&format!("{}  ·  unofficial upload", t.artist), tw, 13.0)
     } else {
         ell(&t.artist, tw, 13.0)
     };

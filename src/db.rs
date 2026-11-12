@@ -33,7 +33,8 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS tracks (
     id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, secs INTEGER NOT NULL,
-    src TEXT NOT NULL, url TEXT NOT NULL, thumb TEXT NOT NULL, preview TEXT NOT NULL, artist_id TEXT NOT NULL
+    src TEXT NOT NULL, url TEXT NOT NULL, thumb TEXT NOT NULL, preview TEXT NOT NULL, artist_id TEXT NOT NULL,
+    unofficial INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS liked  (track_id TEXT PRIMARY KEY REFERENCES tracks(id), pos INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS recent (track_id TEXT PRIMARY KEY REFERENCES tracks(id), pos INTEGER NOT NULL);
@@ -45,10 +46,11 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (
     PRIMARY KEY (playlist_id, pos)
 );
 CREATE TABLE IF NOT EXISTS resolved (track_id TEXT PRIMARY KEY, page_url TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ";
 
 const TRACK_COLS: &str =
-    "t.id, t.title, t.artist, t.secs, t.src, t.url, t.thumb, t.preview, t.artist_id";
+    "t.id, t.title, t.artist, t.secs, t.src, t.url, t.thumb, t.preview, t.artist_id, t.unofficial";
 
 pub(crate) struct Db(Connection);
 
@@ -82,12 +84,12 @@ fn migrate_cache_db(to: &Path) {
 
 fn upsert(tx: &Transaction, t: &Track) -> rusqlite::Result<()> {
     tx.execute(
-        "INSERT INTO tracks (id, title, artist, secs, src, url, thumb, preview, artist_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO tracks (id, title, artist, secs, src, url, thumb, preview, artist_id, unofficial)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET title = excluded.title, artist = excluded.artist, secs = excluded.secs,
             src = excluded.src, url = excluded.url, thumb = excluded.thumb, preview = excluded.preview,
-            artist_id = excluded.artist_id",
-        params![t.id, t.title, t.artist, t.secs as i64, t.src, t.url, t.thumb, t.preview, t.artist_id],
+            artist_id = excluded.artist_id, unofficial = excluded.unofficial",
+        params![t.id, t.title, t.artist, t.secs as i64, t.src, t.url, t.thumb, t.preview, t.artist_id, t.unofficial as i64],
     )?;
     Ok(())
 }
@@ -103,6 +105,7 @@ fn track_from_row(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         thumb: r.get(6)?,
         preview: r.get(7)?,
         artist_id: r.get(8)?,
+        unofficial: r.get::<_, i64>(9)? != 0,
     })
 }
 
@@ -113,6 +116,15 @@ impl Db {
 
     fn init(c: Connection) -> rusqlite::Result<Self> {
         c.execute_batch(SCHEMA)?;
+        // databases created before the `unofficial` flag existed
+        let has: i64 = c.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tracks') WHERE name = 'unofficial'",
+            [],
+            |r| r.get(0),
+        )?;
+        if has == 0 {
+            c.execute_batch("ALTER TABLE tracks ADD COLUMN unofficial INTEGER NOT NULL DEFAULT 0")?;
+        }
         Ok(Self(c))
     }
 
@@ -181,6 +193,23 @@ impl Db {
             }
         }
         tx.commit()
+    }
+
+    fn setting(&self, key: &str) -> Option<String> {
+        self.0
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .ok()
+    }
+
+    fn put_setting(&self, key: &str, value: &str) -> rusqlite::Result<()> {
+        self.0.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     fn resolved(&self, track_id: &str) -> Option<String> {
@@ -272,6 +301,14 @@ pub(crate) fn playlists() -> Vec<Playlist> {
 pub(crate) fn save_playlists(v: &[Playlist]) {
     with(|d| d.put_playlists(v))
 }
+pub(crate) fn setting(key: &str) -> Option<String> {
+    with(|d| Ok(d.setting(key)))
+}
+
+pub(crate) fn put_setting(key: &str, value: &str) {
+    with(|d| d.put_setting(key, value))
+}
+
 pub(crate) fn resolved(track_id: &str) -> Option<String> {
     with(|d| Ok(d.resolved(track_id)))
 }
@@ -320,6 +357,14 @@ mod tests {
         assert_eq!(ids(got[0].tracks.clone()), ["a", "a", "c"]);
         db.put_playlists(&[]).unwrap();
         assert!(db.playlists().unwrap().is_empty());
+
+        assert_eq!(db.setting("official_only"), None);
+        db.put_setting("official_only", "0").unwrap();
+        assert_eq!(db.setting("official_only").as_deref(), Some("0"));
+        let mut flagged = track("z");
+        flagged.unofficial = true;
+        db.put_list("recent", &[flagged]).unwrap();
+        assert!(db.list("recent").unwrap()[0].unofficial);
 
         assert_eq!(db.resolved("a"), None);
         db.put_resolved("a", "u1").unwrap();

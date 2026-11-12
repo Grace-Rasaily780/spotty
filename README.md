@@ -23,14 +23,21 @@ Needs Windows 10+ or Linux (x86_64; aarch64 builds from source) and an audio out
 
 ## How playback works
 
-1. Search uses the Deezer catalogue (artists, albums, covers, durations).
-2. For each track Spotty looks for the matching **official** upload: a YouTube "Artist - Topic" channel,
-   a verified channel named like the artist, or a SoundCloud uploader named like the artist.
-   Title and length must match, so covers, remixes and lyric re-uploads are rejected.
-3. If YouTube blocks the connection, Spotty uses the other sources and retries YouTube every 5 minutes.
-4. If no full-length official stream exists, the 30-second preview plays and the player says so.
+1. Search is YouTube-first. Two searches are merged and ranked: official sources first, then relevance,
+   with live cuts, remixes, sped-up edits and mixes pushed down. Titles and artists are cleaned up
+   ("The 1975 - About You (Official Video)" becomes "About You" by The 1975). Every result is a real,
+   playable upload.
+2. **Official only** (on by default, next to the search box) keeps YouTube "Artist - Topic" channels, verified
+   VEVO channels and verified channels named like the artist you searched for. Turn it off to include other
+   uploads; they are ranked lower and marked "unofficial upload".
+3. Artist pages come from the artist's official YouTube channels.
+4. If YouTube blocks the connection, Spotty looks for an official SoundCloud copy and retries YouTube
+   every 5 minutes.
+5. If no full-length stream can be played, a 30-second preview from the Deezer catalogue plays and the
+   player says so.
 
-Audio is streamed in chunks and never saved. Press the download button on a track to save it to `~/Music/Spotty`.
+Audio is streamed in chunks and never saved. Press the download button on a track to save it to your
+`Music/Spotty` folder.
 
 ## Your data
 

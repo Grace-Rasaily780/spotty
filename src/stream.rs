@@ -1,3 +1,4 @@
+use crate::catalog::deezer_preview;
 use crate::db;
 use crate::model::{Msg, Track};
 use crate::util::{base_title, key, norm};
@@ -256,46 +257,76 @@ pub(crate) fn play_catalogue(
     Err("No official source found for this track".into())
 }
 
-/// Stream the track (nothing is written to disk).
+/// Page URL of an official copy of a catalogue track (remembered match, else YouTube, else SoundCloud).
+pub(crate) fn official_page(t: &Track) -> Result<String, String> {
+    if let Some(u) = db::resolved(&t.id) {
+        return Ok(u);
+    }
+    for prefix in ["ytsearch", "scsearch"] {
+        if let Ok(Some(u)) = match_official(prefix, t) {
+            db::put_resolved(&t.id, &u);
+            return Ok(u);
+        }
+    }
+    Err("No official source found for this track".into())
+}
+
+/// Play a YouTube/SoundCloud upload directly. If YouTube fails (blocked, removed), look for an
+/// official SoundCloud copy of the same recording.
+fn play_direct(t: &Track) -> Result<rodio::Decoder<HttpFile>, String> {
+    let url = if t.src.is_empty() && yt_blocked() {
+        Err("YouTube blocked".to_string())
+    } else {
+        resolve(t)
+    };
+    let url = match url {
+        Ok(u) => {
+            if t.src.is_empty() {
+                set_yt_blocked(false);
+            }
+            u
+        }
+        Err(e) if t.src.is_empty() => {
+            if is_block_err(&e) {
+                set_yt_blocked(true);
+            }
+            let q = format!("{} {}", t.artist, t.title);
+            let alt = raw_search("scsearch", &q, 8)?
+                .into_iter()
+                .find(|r| official_sc(r, &q) && r.t.secs.abs_diff(t.secs) < 15)
+                .ok_or_else(|| format!("{} No other official copy found.", plain_err(&e)))?;
+            resolve(&alt.t)?
+        }
+        Err(e) => return Err(e),
+    };
+    dec(url)
+}
+
+/// Stream the track (nothing is written to disk). Last resort: a 30-second preview.
 pub(crate) fn stream(req: usize, t: Track, tx: mpsc::Sender<Msg>, ctx: egui::Context) {
     std::thread::spawn(move || {
         let res = (|| -> Result<(rodio::Decoder<HttpFile>, bool), String> {
             if t.src == "dz" {
+                // saved by an older version: catalogue track, find its official upload
                 let (d, pv, note) = play_catalogue(&t)?;
                 if let Some(n) = note {
                     let _ = tx.send(Msg::Toast(n));
                 }
                 return Ok((d, pv));
             }
-            // older saved tracks: direct YouTube / SoundCloud ids
-            let url = if t.src.is_empty() && yt_blocked() {
-                Err("YouTube blocked".to_string())
-            } else {
-                resolve(&t)
-            };
-            let url = match url {
-                Ok(u) => {
-                    if t.src.is_empty() {
-                        set_yt_blocked(false);
+            match play_direct(&t) {
+                Ok(d) => Ok((d, false)),
+                Err(e) => match deezer_preview(&t).and_then(|u| dec(u).ok()) {
+                    Some(d) => {
+                        let _ = tx.send(Msg::Toast(
+                            "No full-length stream could be played. Playing the 30-second preview."
+                                .into(),
+                        ));
+                        Ok((d, true))
                     }
-                    u
-                }
-                Err(e) if t.src.is_empty() => {
-                    if is_block_err(&e) {
-                        set_yt_blocked(true);
-                    }
-                    let q = format!("{} {}", t.artist, t.title);
-                    let alt = raw_search("scsearch", &q, 8)?
-                        .into_iter()
-                        .find(|r| official_sc(r, &q) && r.t.secs.abs_diff(t.secs) < 15)
-                        .ok_or_else(|| {
-                            format!("{} No official copy found elsewhere.", plain_err(&e))
-                        })?;
-                    resolve(&alt.t)?
-                }
-                Err(e) => return Err(e),
-            };
-            Ok((dec(url)?, false))
+                    None => Err(e),
+                },
+            }
         })();
         let _ = tx.send(match res {
             Ok((d, pv)) => Msg::Ready(req, t, d, pv),
@@ -305,29 +336,37 @@ pub(crate) fn stream(req: usize, t: Track, tx: mpsc::Sender<Msg>, ctx: egui::Con
     });
 }
 
-/// Explicit download only: saves to ~/Music/Spotty.
+/// Explicit download only: saves to the user's Music folder (`Spotty/`).
 pub(crate) fn download(t: Track, tx: mpsc::Sender<Msg>, ctx: egui::Context) {
     std::thread::spawn(move || {
         let dir = dirs::audio_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("Spotty");
         let _ = std::fs::create_dir_all(&dir);
-        let o = command().and_then(|mut c| {
-            c.args([
-                "-f",
-                "bestaudio[ext=m4a]/bestaudio[protocol^=http][protocol!*=m3u8]",
-                "--no-playlist",
-                "-o",
-            ])
-            .arg(dir.join("%(title)s.%(ext)s"))
-            .arg(watch_url(&t))
-            .output()
-            .map_err(|e| e.to_string())
+        // catalogue tracks have no page of their own: resolve to their official upload first
+        let page = if t.src == "dz" {
+            official_page(&t)
+        } else {
+            Ok(watch_url(&t))
+        };
+        let o = page.and_then(|page| {
+            command().and_then(|mut c| {
+                c.args([
+                    "-f",
+                    "bestaudio[ext=m4a]/bestaudio[protocol^=http][protocol!*=m3u8]",
+                    "--no-playlist",
+                    "-o",
+                ])
+                .arg(dir.join("%(title)s.%(ext)s"))
+                .arg(page)
+                .output()
+                .map_err(|e| e.to_string())
+            })
         });
         let _ = tx.send(Msg::Toast(match o {
             Ok(o) if o.status.success() => format!("Saved “{}” to {}", t.title, dir.display()),
             Ok(o) => plain_err(&ytdlp_err(&o)),
-            Err(e) => e.to_string(),
+            Err(e) => plain_err(&e),
         }));
         ctx.request_repaint();
     });

@@ -544,6 +544,48 @@ impl App {
             });
     }
 
+    /// "Official only" filter chip next to the search box (remembered between launches).
+    pub(crate) fn official_chip(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let (r, resp) = ui.allocate_exact_size(vec2(140.0, 40.0), Sense::click());
+        let on = self.official_only;
+        let h = ease(
+            ctx,
+            ui.scope_id().with("official-chip"),
+            resp.hovered(),
+            self.reduce,
+        );
+        let fill = if on {
+            GREEN.gamma_multiply(0.16 + 0.08 * h)
+        } else {
+            lerp_c(PILL, HOVER, h)
+        };
+        ui.painter().rect_filled(r, 20.0, fill);
+        let c = pos2(r.left() + 22.0, r.center().y);
+        if on {
+            icon(ui.painter(), Ic::Check, c, 14.0, GREEN);
+        } else {
+            ui.painter().circle_stroke(c, 6.0, Stroke::new(1.6, DIM));
+        }
+        text(
+            ui.painter(),
+            pos2(r.left() + 40.0, r.center().y),
+            Align2::LEFT_CENTER,
+            "Official only",
+            bold(13.0),
+            if on { GREEN } else { DIM },
+        );
+        if resp.hovered() {
+            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if resp.clicked() {
+            self.official_only = !on;
+            db::put_setting("official_only", if self.official_only { "1" } else { "0" });
+            if self.searched {
+                self.search(ctx);
+            }
+        }
+    }
+
     pub(crate) fn top_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let reduce = self.reduce;
         ui.horizontal(|ui| {
@@ -630,6 +672,8 @@ impl App {
                     }
                 });
             });
+            ui.add_space(8.0);
+            self.official_chip(ui, ctx);
         });
     }
 
@@ -786,8 +830,12 @@ impl App {
                 empty_state(
                     ui,
                     Ic::Note,
-                    &format!("No official sources for “{}”", self.query.trim()),
-                    "Try the artist's name, or check the spelling. Unofficial uploads are hidden.",
+                    &format!("No results for “{}”", self.query.trim()),
+                    if self.official_only {
+                        "Try the artist's name, or turn off “Official only” to include other uploads."
+                    } else {
+                        "Try the artist's name, or check the spelling."
+                    },
                 );
             } else {
                 tevt = track_table(ui, &env, &list, false);
