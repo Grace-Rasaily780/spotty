@@ -11,6 +11,7 @@ rm -rf "$out" && mkdir -p "$out"
 cp target/release/spotty "$out/spotty" && strip "$out/spotty"
 cp packaging/spotty.desktop packaging/install.sh README.md "$out/"
 cp assets/icon.png "$out/icon.png"
+chmod 755 "$out/spotty" "$out/install.sh"
 tar -C dist -czf "$out.tar.gz" "$name"
 (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
 echo "built $out.tar.gz"
