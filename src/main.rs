@@ -3,6 +3,7 @@
 mod catalog;
 mod db;
 mod model;
+mod pot;
 mod rank;
 mod setup;
 mod stream;
@@ -44,6 +45,7 @@ fn main() -> eframe::Result {
                 Err(e) => println!("first result resolve FAILED: {e}"),
             }
         }
+        pot::stop();
         return Ok(());
     }
     let opts = eframe::NativeOptions {
@@ -61,9 +63,8 @@ fn main() -> eframe::Result {
         },
         None => opts,
     };
-    ytdlp::start_pot_provider();
     let result = eframe::run_native("Spotty", opts, Box::new(|cc| Ok(Box::new(App::new(cc)))));
-    ytdlp::stop_pot_provider();
+    pot::stop();
     result
 }
 

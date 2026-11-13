@@ -52,7 +52,7 @@ Audio is streamed in chunks and never saved. Press the download button on a trac
 |---|---|
 | `SPOTTY_COOKIES=firefox` | Give yt-dlp your browser's YouTube session (helps if YouTube keeps asking to sign in). Use a throwaway account. |
 | `SPOTTY_REDUCE_MOTION=1` | No fades, shimmer sweeps or spinners animation. |
-| `SPOTTY_NO_POT=1` | Do not start the optional token provider (Linux only; needs Node and git). |
+| `SPOTTY_NO_POT=1` | Turn off the built-in YouTube token provider (on by default, downloaded on first run). |
 
 ## Troubleshooting
 

@@ -127,6 +127,9 @@ pub(crate) fn start(ctx: Option<egui::Context>) {
 pub(crate) fn run_blocking() {
     start(None);
     let _ = wait_ready(Duration::from_secs(600));
+    while lock().running {
+        std::thread::sleep(Duration::from_millis(100)); // let js runtime and token provider finish too
+    }
 }
 
 fn run(ctx: &Option<egui::Context>) {
@@ -165,6 +168,10 @@ fn run(ctx: &Option<egui::Context>) {
         ),
         Err(e) => set(|s| s.status.js = Step::Failed(e), ctx),
     }
+    // bonus component: failure only means YouTube may challenge us more often
+    if let Err(e) = crate::pot::ensure_and_start() {
+        eprintln!("PO-token provider unavailable (continuing without it): {e}");
+    }
 }
 
 // ───────────────────────────── components ─────────────────────────────
@@ -183,7 +190,7 @@ fn platform() -> Result<(&'static str, &'static str, &'static str), String> {
     }
 }
 
-fn bin_dir() -> PathBuf {
+pub(crate) fn bin_dir() -> PathBuf {
     let d = cache_dir().join("bin");
     let _ = std::fs::create_dir_all(&d);
     d
@@ -284,7 +291,7 @@ fn find_sum(listing: &str, name: &str) -> Option<String> {
 }
 
 /// Stream `url` to `dest`, verify its SHA-256, and only then move it into place.
-fn download(
+pub(crate) fn download(
     url: &str,
     dest: &Path,
     want: &str,
@@ -348,13 +355,13 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 #[cfg(unix)]
-fn make_executable(p: &Path) -> Result<(), String> {
+pub(crate) fn make_executable(p: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())
 }
 
 #[cfg(not(unix))]
-fn make_executable(_: &Path) -> Result<(), String> {
+pub(crate) fn make_executable(_: &Path) -> Result<(), String> {
     Ok(())
 }
 
